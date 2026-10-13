@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facade Area Calculator</title>
+<meta name="description" content="Net facade area per material, with openings deducted by height zone and waste included.">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1b1f24;
+    --muted: #5d6673;
+    --border: #d9dee5;
+    --accent: #2c5a8c;
+    --accent-soft: #e6eef7;
+    --warn-bg: #fff4dc;
+    --warn-border: #e7b84a;
+    --warn-text: #6b4a00;
+    --row-sub: #f0f3f7;
+    --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171b;
+      --card: #1d2126;
+      --text: #e7eaee;
+      --muted: #9aa4b1;
+      --border: #333a43;
+      --accent: #7fb0e6;
+      --accent-soft: #1f2d3d;
+      --warn-bg: #3a2f14;
+      --warn-border: #a37e2c;
+      --warn-text: #f3d48a;
+      --row-sub: #242a31;
+      --danger: #ff8a80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171b; --card: #1d2126; --text: #e7eaee; --muted: #9aa4b1; --border: #333a43;
+    --accent: #7fb0e6; --accent-soft: #1f2d3d; --warn-bg: #3a2f14; --warn-border: #a37e2c;
+    --warn-text: #f3d48a; --row-sub: #242a31; --danger: #ff8a80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .lede { color: var(--muted); margin: 0 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  input, select {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; min-width: 0;
+  }
+  input[type=number] { width: 92px; }
+  input.name { width: 200px; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 6px; padding: 6px 12px;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--card); }
+  button.link { border: none; background: none; color: var(--accent); padding: 4px 6px; }
+  button.remove { border: none; background: none; color: var(--danger); padding: 4px 6px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.sub td { background: var(--row-sub); font-weight: 600; }
+  tr.total td { background: var(--accent-soft); font-weight: 700; }
+  .edit-table td { padding: 4px 6px; }
+  .edit-table input[type=number] { width: 84px; }
+  .edit-table input.name { width: 170px; }
+  .facade-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .warnings { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+  .warnings ul { margin: 6px 0 0; padding-left: 18px; }
+  .hidden { display: none; }
+  .note { color: var(--muted); font-size: 12px; }
+  .status { color: var(--accent); font-size: 12px; min-height: 1em; }
+  @media (max-width: 640px) {
+    input.name { width: 100%; }
+    .row label { flex: 1 1 40%; }
+    .row label input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Facade Area Calculator</h1>
+  <p class="lede">Net area per material for rectangular facades, with openings deducted from the height zone they sit in and waste added for ordering. All dimensions in metres, areas in m².</p>
+
+  <div class="toolbar">
+    <button class="primary" id="add-facade">+ Add facade</button>
+    <button id="load-example">Load example</button>
+    <button id="clear-all">Clear all</button>
+  </div>
+
+  <div id="facades"></div>
+
+  <div class="card">
+    <h2>Settings</h2>
+    <div class="row">
+      <label>Don't deduct openings smaller than (m²)
+        <input type="number" id="min-deduct" min="0" step="0.01">
+      </label>
+    </div>
+    <h3>Waste factor per material</h3>
+    <div id="waste" class="row"></div>
+    <p class="note">New materials start at 5%.</p>
+  </div>
+
+  <div id="warnings" class="warnings hidden" role="status"></div>
+
+  <div class="card">
+    <div class="facade-head">
+      <h2>Results</h2>
+      <div class="row">
+        <button id="copy-tsv">Copy for Excel</button>
+        <button id="download-csv">Download CSV</button>
+      </div>
+    </div>
+    <p class="status" id="export-status"></p>
+    <div class="scroll"><table id="results"></table></div>
+    <h3>Totals per material</h3>
+    <div class="scroll"><table id="material-totals"></table></div>
+    <h3>Openings</h3>
+    <div class="scroll"><table id="opening-results"></table></div>
+  </div>
+
+  <p class="note">Notes: openings are placed vertically by sill height only, so openings on the same facade must not overlap. Reveals (jambs, sills, heads) are not included. Your inputs are saved in this browser only.</p>
+</main>
+
+<script>
+const STORAGE_KEY = 'facade-calc-v1';
+const DEFAULT_WASTE = 5;
+const OPENING_TYPES = ['Window', 'Door', 'Louver'];
+
+const blankFacade = () => ({
+  name: 'New facade', width: 10, height: 10, qty: 1,
+  zones: [{ material: 'Material A', bottom: 0, top: 10 }],
+  openings: [],
+});
+
+const exampleState = () => ({
+  minDeduct: 0,
+  waste: { 'Stone': 8, 'Aluminum panel': 5, 'Plaster': 10 },
+  facades: [
+    {
+      name: 'North elevation', width: 24, height: 15.6, qty: 1,
+      zones: [
+        { material: 'Stone', bottom: 0, top: 4.2 },
+        { material: 'Aluminum panel', bottom: 4.2, top: 15.6 },
+      ],
+      openings: [
+        { type: 'Door', width: 2.0, height: 3.0, sill: 0, count: 2 },
+        { type: 'Window', width: 3.0, height: 3.0, sill: 0.6, count: 2 },
+        { type: 'Window', width: 2.4, height: 2.0, sill: 3.6, count: 1 },
+        { type: 'Window', width: 1.8, height: 2.4, sill: 6.0, count: 8 },
+      ],
+    },
+    {
+      name: 'East elevation', width: 12, height: 15.6, qty: 2,
+      zones: [
+        { material: 'Stone', bottom: 0, top: 4.2 },
+        { material: 'Plaster', bottom: 4.2, top: 15.6 },
+      ],
+      openings: [
+        { type: 'Window', width: 1.2, height: 1.8, sill: 6.0, count: 4 },
+        { type: 'Louver', width: 0.6, height: 0.6, sill: 13.0, count: 2 },
+      ],
+    },
+  ],
+});
+
+let state = loadState() || exampleState();
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+
+const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+const fmt = n => (Math.round(n * 100) / 100).toFixed(2);
+const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+
+function materialsInUse(s) {
+  const seen = [];
+  for (const f of s.facades) for (const z of f.zones) {
+    const m = (z.material || '').trim();
+    if (m && !seen.includes(m)) seen.push(m);
+  }
+  return seen;
+}
+function wasteFor(s, material) {
+  return material in s.waste ? num(s.waste[material]) : DEFAULT_WASTE;
+}
+
+// Pure calculation: state in, results out. No rounding until display.
+function calculate(s) {
+  const rows = [], openingRows = [], warnings = [];
+  const minDeduct = num(s.minDeduct);
+
+  s.facades.forEach((f, fi) => {
+    const label = f.name || `Facade ${fi + 1}`;
+    const W = num(f.width), H = num(f.height), qty = Math.max(0, num(f.qty));
+    if (W <= 0 || H <= 0) warnings.push(`${label}: width and height must be greater than 0.`);
+
+    // Zone coverage check: bands should run 0 → H with no gaps or overlaps.
+    const zones = f.zones.map(z => ({ material: (z.material || '').trim() || '(unnamed)', bottom: num(z.bottom), top: num(z.top) }));
+    zones.forEach(z => {
+      if (z.top <= z.bottom) warnings.push(`${label}: zone "${z.material}" has top ≤ bottom.`);
+      if (z.bottom < 0 || z.top > H + 1e-9) warnings.push(`${label}: zone "${z.material}" (${fmt(z.bottom)}–${fmt(z.top)} m) extends outside the facade (0–${fmt(H)} m).`);
+    });
+    const sorted = [...zones].filter(z => z.top > z.bottom).sort((a, b) => a.bottom - b.bottom);
+    let cursor = 0;
+    sorted.forEach(z => {
+      if (z.bottom > cursor + 1e-9) warnings.push(`${label}: no material between ${fmt(cursor)} and ${fmt(z.bottom)} m.`);
+      if (z.bottom < cursor - 1e-9) warnings.push(`${label}: zones overlap between ${fmt(z.bottom)} and ${fmt(Math.min(cursor, z.top))} m.`);
+      cursor = Math.max(cursor, z.top);
+    });
+    if (cursor < H - 1e-9) warnings.push(`${label}: no material between ${fmt(cursor)} and ${fmt(H)} m.`);
+
+    const openings = f.openings.map(o => ({
+      type: o.type, width: num(o.width), height: num(o.height), sill: num(o.sill), count: Math.max(0, num(o.count)),
+    }));
+    openings.forEach((o, oi) => {
+      const name = `${label}: ${o.type.toLowerCase()} #${oi + 1}`;
+      if (o.width > W + 1e-9) warnings.push(`${name} is wider (${fmt(o.width)} m) than the facade (${fmt(W)} m).`);
+      if (o.sill < 0 || o.sill + o.height > H + 1e-9) warnings.push(`${name} (${fmt(o.sill)}–${fmt(o.sill + o.height)} m) extends past the facade height.`);
+    });
+
+    // Gross, deduction and net per zone, then merged per material within this facade.
+    const byMaterial = new Map();
+    zones.forEach(z => {
+      const zb = Math.max(0, z.bottom), zt = Math.min(H, z.top);
+      const gross = W * Math.max(0, zt - zb);
+      let deducted = 0;
+      openings.forEach(o => {
+        if (o.width * o.height < minDeduct) return;
+        deducted += o.width * overlap(o.sill, o.sill + o.height, zb, zt) * o.count;
+      });
+      const acc = byMaterial.get(z.material) || { gross: 0, deducted: 0 };
+      acc.gross += gross; acc.deducted += deducted;
+      byMaterial.set(z.material, acc);
+    });
+    byMaterial.forEach((acc, material) => {
+      let net = acc.gross - acc.deducted;
+      if (net < -1e-9) {
+        warnings.push(`${label}: openings exceed the area of "${material}". Net area set to 0.`);
+        net = 0;
+      }
+      const waste = wasteFor(s, material);
+      rows.push({
+        facade: label, qty, material,
+        gross: acc.gross * qty, deducted: acc.deducted * qty, net: net * qty,
+        waste, order: net * qty * (1 + waste / 100),
+      });
+    });
+
+    // Opening areas by type (Decision 1), whether or not they were deducted.
+    OPENING_TYPES.forEach(type => {
+      const ofType = openings.filter(o => o.type === type);
+      if (!ofType.length) return;
+      const count = ofType.reduce((t, o) => t + o.count, 0) * qty;
+      const area = ofType.reduce((t, o) => t + o.width * o.height * o.count, 0) * qty;
+      const notDeducted = ofType.filter(o => o.width * o.height < minDeduct).reduce((t, o) => t + o.count, 0) * qty;
+      openingRows.push({ facade: label, type, count, area, notDeducted });
+    });
+  });
+
+  const materialTotals = new Map();
+  rows.forEach(r => {
+    const t = materialTotals.get(r.material) || { gross: 0, deducted: 0, net: 0, order: 0, waste: r.waste };
+    t.gross += r.gross; t.deducted += r.deducted; t.net += r.net; t.order += r.order;
+    materialTotals.set(r.material, t);
+  });
+  const total = rows.reduce((t, r) => ({
+    gross: t.gross + r.gross, deducted: t.deducted + r.deducted, net: t.net + r.net, order: t.order + r.order,
+  }), { gross: 0, deducted: 0, net: 0, order: 0 });
+
+  return { rows, openingRows, materialTotals, total, warnings };
+}
+
+// ---------- Rendering ----------
+const el = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function renderForm() {
+  el('facades').innerHTML = state.facades.map((f, fi) => `
+    <div class="card">
+      <div class="facade-head">
+        <div class="row">
+          <label>Facade name <input class="name" data-f="${fi}" data-k="name" value="${esc(f.name)}"></label>
+          <label>Width (m) <input type="number" min="0" step="0.01" data-f="${fi}" data-k="width" value="${f.width}"></label>
+          <label>Height (m) <input type="number" min="0" step="0.01" data-f="${fi}" data-k="height" value="${f.height}"></label>
+          <label>Quantity <input type="number" min="0" step="1" data-f="${fi}" data-k="qty" value="${f.qty}"></label>
+        </div>
+        <div>
+          <button class="link" data-action="dup-facade" data-f="${fi}">Duplicate</button>
+          <button class="remove" data-action="del-facade" data-f="${fi}">Remove facade</button>
+        </div>
+      </div>
+
+      <h3>Material zones (by height)</h3>
+      <div class="scroll"><table class="edit-table">
+        <tr><th>Material</th><th>Bottom (m)</th><th>Top (m)</th><th></th></tr>
+        ${f.zones.map((z, zi) => `<tr>
+          <td><input class="name" data-f="${fi}" data-list="zones" data-i="${zi}" data-k="material" value="${esc(z.material)}"></td>
+          <td><input type="number" step="0.01" data-f="${fi}" data-list="zones" data-i="${zi}" data-k="bottom" value="${z.bottom}"></td>
+          <td><input type="number" step="0.01" data-f="${fi}" data-list="zones" data-i="${zi}" data-k="top" value="${z.top}"></td>
+          <td><button class="remove" data-action="del-row" data-f="${fi}" data-list="zones" data-i="${zi}" aria-label="Remove zone">✕</button></td>
+        </tr>`).join('')}
+      </table></div>
+      <button class="link" data-action="add-zone" data-f="${fi}">+ Add zone</button>
+
+      <h3>Openings</h3>
+      <div class="scroll"><table class="edit-table">
+        <tr><th>Type</th><th>Width (m)</th><th>Height (m)</th><th>Sill height (m)</th><th>Count</th><th></th></tr>
+        ${f.openings.map((o, oi) => `<tr>
+          <td><select data-f="${fi}" data-list="openings" data-i="${oi}" data-k="type">
+            ${OPENING_TYPES.map(t => `<option${t === o.type ? ' selected' : ''}>${t}</option>`).join('')}
+          </select></td>
+          <td><input type="number" min="0" step="0.01" data-f="${fi}" data-list="openings" data-i="${oi}" data-k="width" value="${o.width}"></td>
+          <td><input type="number" min="0" step="0.01" data-f="${fi}" data-list="openings" data-i="${oi}" data-k="height" value="${o.height}"></td>
+          <td><input type="number" step="0.01" data-f="${fi}" data-list="openings" data-i="${oi}" data-k="sill" value="${o.sill}"></td>
+          <td><input type="number" min="0" step="1" data-f="${fi}" data-list="openings" data-i="${oi}" data-k="count" value="${o.count}"></td>
+          <td><button class="remove" data-action="del-row" data-f="${fi}" data-list="openings" data-i="${oi}" aria-label="Remove opening">✕</button></td>
+        </tr>`).join('')}
+      </table></div>
+      <button class="link" data-action="add-opening" data-f="${fi}">+ Add opening</button>
+    </div>`).join('') || '<div class="card note">No facades yet. Add one or load the example.</div>';
+
+  el('min-deduct').value = state.minDeduct;
+  renderWaste();
+}
+
+function renderWaste() {
+  const mats = materialsInUse(state);
+  const focused = document.activeElement && document.activeElement.dataset.waste;
+  el('waste').innerHTML = mats.map(m => `
+    <label>${esc(m)} (%) <input type="number" min="0" step="0.5" data-waste="${esc(m)}" value="${wasteFor(state, m)}"></label>
+  `).join('') || '<span class="note">Add a material zone to set its waste factor.</span>';
+  if (focused) {
+    const again = [...el('waste').querySelectorAll('input')].find(i => i.dataset.waste === focused);
+    if (again) again.focus();
+  }
+}
+
+function renderResults() {
+  const r = calculate(state);
+
+  const w = el('warnings');
+  w.classList.toggle('hidden', !r.warnings.length);
+  w.innerHTML = r.warnings.length ? `<strong>Check these inputs</strong><ul>${r.warnings.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+
+  const head = '<tr><th>Facade</th><th>Material</th><th class="num">Gross</th><th class="num">Openings deducted</th><th class="num">Net</th><th class="num">Waste %</th><th class="num">Order</th></tr>';
+  let body = '';
+  const facades = [...new Set(r.rows.map(x => x.facade))];
+  facades.forEach(name => {
+    const fr = r.rows.filter(x => x.facade === name);
+    fr.forEach(x => {
+      body += `<tr><td>${esc(x.facade)}${x.qty !== 1 ? ` ×${x.qty}` : ''}</td><td>${esc(x.material)}</td><td class="num">${fmt(x.gross)}</td><td class="num">${fmt(x.deducted)}</td><td class="num">${fmt(x.net)}</td><td class="num">${fmt(x.waste)}</td><td class="num">${fmt(x.order)}</td></tr>`;
+    });
+    const sub = fr.reduce((t, x) => ({ g: t.g + x.gross, d: t.d + x.deducted, n: t.n + x.net, o: t.o + x.order }), { g: 0, d: 0, n: 0, o: 0 });
+    body += `<tr class="sub"><td>${esc(name)} subtotal</td><td></td><td class="num">${fmt(sub.g)}</td><td class="num">${fmt(sub.d)}</td><td class="num">${fmt(sub.n)}</td><td></td><td class="num">${fmt(sub.o)}</td></tr>`;
+  });
+  if (r.rows.length) {
+    body += `<tr class="total"><td>Project total</td><td></td><td class="num">${fmt(r.total.gross)}</td><td class="num">${fmt(r.total.deducted)}</td><td class="num">${fmt(r.total.net)}</td><td></td><td class="num">${fmt(r.total.order)}</td></tr>`;
+  }
+  el('results').innerHTML = head + body;
+
+  el('material-totals').innerHTML = '<tr><th>Material</th><th class="num">Gross</th><th class="num">Openings deducted</th><th class="num">Net</th><th class="num">Waste %</th><th class="num">Order</th></tr>' +
+    [...r.materialTotals].map(([m, t]) => `<tr><td>${esc(m)}</td><td class="num">${fmt(t.gross)}</td><td class="num">${fmt(t.deducted)}</td><td class="num">${fmt(t.net)}</td><td class="num">${fmt(t.waste)}</td><td class="num">${fmt(t.order)}</td></tr>`).join('');
+
+  el('opening-results').innerHTML = '<tr><th>Facade</th><th>Type</th><th class="num">Count</th><th class="num">Area</th><th class="num">Not deducted (below threshold)</th></tr>' +
+    r.openingRows.map(o => `<tr><td>${esc(o.facade)}</td><td>${o.type}</td><td class="num">${o.count}</td><td class="num">${fmt(o.area)}</td><td class="num">${o.notDeducted || '—'}</td></tr>`).join('');
+
+  return r;
+}
+
+function refresh({ form = false } = {}) {
+  if (form) renderForm(); else renderWaste();
+  renderResults();
+  saveState();
+}
+
+// ---------- Events ----------
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'min-deduct') { state.minDeduct = t.value; return refresh(); }
+  if (t.dataset.waste !== undefined) { state.waste[t.dataset.waste] = t.value; renderResults(); return saveState(); }
+  if (t.dataset.f === undefined) return;
+  const f = state.facades[+t.dataset.f];
+  const target = t.dataset.list ? f[t.dataset.list][+t.dataset.i] : f;
+  target[t.dataset.k] = t.value;
+  refresh();
+});
+document.addEventListener('change', e => {
+  if (e.target.tagName === 'SELECT') { refresh(); }
+});
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const fi = +b.dataset.f;
+  switch (b.dataset.action || b.id) {
+    case 'add-facade': state.facades.push(blankFacade()); break;
+    case 'load-example': state = exampleState(); break;
+    case 'clear-all':
+      if (!confirm('Remove all facades and settings?')) return;
+      state = { minDeduct: 0, waste: {}, facades: [] }; break;
+    case 'dup-facade': state.facades.splice(fi + 1, 0, JSON.parse(JSON.stringify({ ...state.facades[fi], name: state.facades[fi].name + ' (copy)' }))); break;
+    case 'del-facade': state.facades.splice(fi, 1); break;
+    case 'add-zone': {
+      const f = state.facades[fi];
+      const top = f.zones.reduce((m, z) => Math.max(m, num(z.top)), 0);
+      f.zones.push({ material: 'New material', bottom: top, top: num(f.height) });
+      break;
+    }
+    case 'add-opening': state.facades[fi].openings.push({ type: 'Window', width: 1.2, height: 1.5, sill: 0.9, count: 1 }); break;
+    case 'del-row': state.facades[fi][b.dataset.list].splice(+b.dataset.i, 1); break;
+    case 'copy-tsv': return copyTsv();
+    case 'download-csv': return downloadCsv();
+    default: return;
+  }
+  refresh({ form: true });
+});
+
+// ---------- Export ----------
+function resultTable(r) {
+  const lines = [['Facade', 'Quantity', 'Material', 'Gross (m2)', 'Openings deducted (m2)', 'Net (m2)', 'Waste %', 'Order (m2)']];
+  r.rows.forEach(x => lines.push([x.facade, x.qty, x.material, fmt(x.gross), fmt(x.deducted), fmt(x.net), fmt(x.waste), fmt(x.order)]));
+  lines.push(['Project total', '', '', fmt(r.total.gross), fmt(r.total.deducted), fmt(r.total.net), '', fmt(r.total.order)]);
+  return lines;
+}
+
+function setStatus(msg) {
+  el('export-status').textContent = msg;
+  setTimeout(() => { el('export-status').textContent = ''; }, 3000);
+}
+
+function copyTsv() {
+  const text = resultTable(calculate(state)).map(l => l.join('\t')).join('\n');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); setStatus('Copied. Paste into Excel.'); } catch (e) { setStatus('Copy failed. Use Download CSV instead.'); }
+    ta.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => setStatus('Copied. Paste into Excel.'), fallback);
+  } else fallback();
+}
+
+function downloadCsv() {
+  const r = calculate(state);
+  const csvCell = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+  const lines = [['RESULTS'], ...resultTable(r), [], ['TOTALS PER MATERIAL'], ['Material', 'Gross (m2)', 'Openings deducted (m2)', 'Net (m2)', 'Waste %', 'Order (m2)']];
+  r.materialTotals.forEach((t, m) => lines.push([m, fmt(t.gross), fmt(t.deducted), fmt(t.net), fmt(t.waste), fmt(t.order)]));
+  lines.push([], ['OPENINGS'], ['Facade', 'Type', 'Count', 'Area (m2)', 'Not deducted (count)']);
+  r.openingRows.forEach(o => lines.push([o.facade, o.type, o.count, fmt(o.area), o.notDeducted]));
+  lines.push([], ['INPUTS'], ['Minimum opening area deducted (m2)', num(state.minDeduct)]);
+  lines.push(['Facade', 'Width (m)', 'Height (m)', 'Quantity']);
+  state.facades.forEach(f => lines.push([f.name, num(f.width), num(f.height), num(f.qty)]));
+  lines.push([], ['Facade', 'Zone material', 'Bottom (m)', 'Top (m)']);
+  state.facades.forEach(f => f.zones.forEach(z => lines.push([f.name, z.material, num(z.bottom), num(z.top)])));
+  lines.push([], ['Facade', 'Opening type', 'Width (m)', 'Height (m)', 'Sill (m)', 'Count']);
+  state.facades.forEach(f => f.openings.forEach(o => lines.push([f.name, o.type, num(o.width), num(o.height), num(o.sill), num(o.count)])));
+  lines.push([], ['Material', 'Waste %']);
+  materialsInUse(state).forEach(m => lines.push([m, wasteFor(state, m)]));
+  if (r.warnings.length) { lines.push([], ['WARNINGS']); r.warnings.forEach(x => lines.push([x])); }
+
+  const blob = new Blob(['﻿' + lines.map(l => l.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `facade-areas-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus('CSV downloaded.');
+}
+
+refresh({ form: true });
+</script>
+</body>
+</html>
